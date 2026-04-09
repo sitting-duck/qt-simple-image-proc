@@ -6,70 +6,73 @@ layout(location = 0) out vec4 fragColor;
 layout(std140, binding = 0) uniform buf {
     mat4 qt_Matrix;
     float qt_Opacity;
+    vec4 controls1;
 };
 
 /**
-    This declares a texture input for the shader.
+    controls1 packs several UI-controlled values into one vec4.
 
-    sampler2D means:
-    "I expect a 2D image-like texture that I can sample from."
+    controls1.x = grayscaleAmount
+    controls1.y = invertAmount
+    controls1.z = brightness
+    controls1.w = contrast
 
-    The name "source" matters because in QML we will define:
-
-        property var source: sourceTexture
-
-    Qt will connect that QML property to this shader input.
-
-    So this shader is NOT automatically finding test.png by itself.
-
-    Instead, the chain is:
-
-        test.png
-        -> loaded by Image in QML
-        -> wrapped as a texture by ShaderEffectSource
-        -> passed into this shader as "source"
-
-    Then inside the shader, we can ask:
-    "At this UV coordinate, what color does the source image have?"
+    Grouping values this way is cleaner and helps avoid uniform
+    alignment surprises.
 */
 layout(binding = 1) uniform sampler2D source;
 
 void main()
 {
     /**
-        This samples the source texture at the current UV coordinate.
-
-        qt_TexCoord0 is the coordinate for the current fragment/pixel
-        within the rectangle, usually normalized from 0.0 to 1.0.
-
-        texture(source, qt_TexCoord0) means:
-
-        "Look at the input image bound to 'source',
-        go to this position in that image,
-        and return the color found there."
-
-        The returned value is a vec4:
-        red, green, blue, alpha
-
-        So unlike the previous version of the shader, where we
-        CREATED a color from position mathematically, here we are
-        READING a color from an actual image.
+        Sample the original image color at this pixel.
     */
     vec4 srcColor = texture(source, qt_TexCoord0);
 
     /**
-        This outputs the sampled image color.
-
-        Right now we are displaying it unchanged, which means:
-        whatever color we sampled from the image is what we draw.
-
-        We still multiply by qt_Opacity so that if the QML item's
-        opacity changes, the shader respects that setting.
-
-        So this is basically:
-
-        final pixel color = sampled image color
-                            times Qt's overall opacity
+        Start with the source RGB as the working color.
     */
-    fragColor = srcColor * qt_Opacity;
+    vec3 color = srcColor.rgb;
+
+    /**
+        Convert to grayscale brightness using perceptual weights.
+    */
+    float gray = dot(color, vec3(0.299, 0.587, 0.114));
+    vec3 grayRgb = vec3(gray);
+
+    /**
+        Blend between original color and grayscale.
+    */
+    color = mix(color, grayRgb, controls1.x);
+
+    /**
+        Build a fully inverted version of the current color,
+        then blend toward it by invert amount.
+    */
+    vec3 inverted = vec3(1.0) - color;
+    color = mix(color, inverted, controls1.y);
+
+    /**
+        Brightness shifts the color up or down.
+        A value of 0.0 means no change.
+    */
+    color += vec3(controls1.z);
+
+    /**
+        Contrast scales distance from middle gray (0.5).
+        1.0 means no contrast change.
+        Below 1.0 reduces contrast.
+        Above 1.0 increases contrast.
+    */
+    color = (color - vec3(0.5)) * controls1.w + vec3(0.5);
+
+    /**
+        Clamp so values stay in the visible 0..1 range.
+    */
+    color = clamp(color, 0.0, 1.0);
+
+    /**
+        Output final color with original alpha and Qt opacity.
+    */
+    fragColor = vec4(color, srcColor.a) * qt_Opacity;
 }
