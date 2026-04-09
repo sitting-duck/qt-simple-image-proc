@@ -6,58 +6,70 @@ layout(location = 0) out vec4 fragColor;
 layout(std140, binding = 0) uniform buf {
     mat4 qt_Matrix;
     float qt_Opacity;
-    vec4 tintColor;
 };
+
+/**
+    This declares a texture input for the shader.
+
+    sampler2D means:
+    "I expect a 2D image-like texture that I can sample from."
+
+    The name "source" matters because in QML we will define:
+
+        property var source: sourceTexture
+
+    Qt will connect that QML property to this shader input.
+
+    So this shader is NOT automatically finding test.png by itself.
+
+    Instead, the chain is:
+
+        test.png
+        -> loaded by Image in QML
+        -> wrapped as a texture by ShaderEffectSource
+        -> passed into this shader as "source"
+
+    Then inside the shader, we can ask:
+    "At this UV coordinate, what color does the source image have?"
+*/
+layout(binding = 1) uniform sampler2D source;
 
 void main()
 {
     /**
-        This creates a 3-component color vector.
+        This samples the source texture at the current UV coordinate.
 
-        You are constructing RGB from:
-        red = horizontal coordinate
-        green = vertical coordinate
-        blue = constant 0.25
+        qt_TexCoord0 is the coordinate for the current fragment/pixel
+        within the rectangle, usually normalized from 0.0 to 1.0.
 
-        So for a pixel near the left edge:
-        red is low
+        texture(source, qt_TexCoord0) means:
 
-        For a pixel near the right edge:
-        red is high
+        "Look at the input image bound to 'source',
+        go to this position in that image,
+        and return the color found there."
 
-        For a pixel near one vertical edge:
-        green is low or high depending on direction
-        Blue stays fixed at 0.25 everywhere.
+        The returned value is a vec4:
+        red, green, blue, alpha
 
-        That is why you see a gradient.
-        This line is really the core of the demo:
-        you are converting position into color.
+        So unlike the previous version of the shader, where we
+        CREATED a color from position mathematically, here we are
+        READING a color from an actual image.
     */
-    vec3 color = vec3(qt_TexCoord0.x, qt_TexCoord0.y, 0.25);
+    vec4 srcColor = texture(source, qt_TexCoord0);
 
     /**
-        This part is not fundamentally required for shader math,
-        but it is required if you want your shader to behave properly inside Qt’s UI system.
-        That is the subtle part.
+        This outputs the sampled image color.
 
-        Why Qt wants this
-        Imagine in QML you later write:
+        Right now we are displaying it unchanged, which means:
+        whatever color we sampled from the image is what we draw.
 
-        ShaderEffect {
-            opacity: 0.2
-        }
+        We still multiply by qt_Opacity so that if the QML item's
+        opacity changes, the shader respects that setting.
 
-        You would expect your rectangle to become mostly transparent.
-        Qt passes that opacity value into the shader as: qt_Opacity
+        So this is basically:
 
-        If your shader ignores it, then your item might not fade correctly.
-
-        So this line:
-
-        * qt_Opacity
-
-        is basically saying:
-        “Respect whatever opacity Qt says this item should have.”
+        final pixel color = sampled image color
+                            times Qt's overall opacity
     */
-    fragColor = vec4(color, 1.0) * qt_Opacity;
+    fragColor = srcColor * qt_Opacity;
 }
