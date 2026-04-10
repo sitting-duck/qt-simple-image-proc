@@ -7,72 +7,122 @@ layout(std140, binding = 0) uniform buf {
     mat4 qt_Matrix;
     float qt_Opacity;
     vec4 controls1;
+    vec4 controls2;
+    vec4 controls3;
 };
 
 /**
-    controls1 packs several UI-controlled values into one vec4.
+    controls1:
+        x = grayscaleAmount
+        y = invertAmount
+        z = brightness
+        w = contrast
 
-    controls1.x = grayscaleAmount
-    controls1.y = invertAmount
-    controls1.z = brightness
-    controls1.w = contrast
+    controls2:
+        x = thresholdAmount
+        y = thresholdCutoff
+        z = saturation
+        w = blurAmount
 
-    Grouping values this way is cleaner and helps avoid uniform
-    alignment surprises.
+    controls3:
+        x = texelStepX
+        y = texelStepY
+        z = effectOpacity
+        w = blurRadius
+
+    A texel is a texture pixel.
+
+    texelStepX and texelStepY are the UV-sized distances of one texel
+    in the horizontal and vertical directions.
+
+    blurRadius scales how far away the neighboring blur samples are taken.
 */
 layout(binding = 1) uniform sampler2D source;
 
 void main()
 {
-    /**
-        Sample the original image color at this pixel.
-    */
-    vec4 srcColor = texture(source, qt_TexCoord0);
+    vec2 texel = vec2(controls3.x, controls3.y);
+    vec2 uv = qt_TexCoord0;
 
     /**
-        Start with the source RGB as the working color.
+        blurRadius controls how far away our neighbor samples are.
+
+        radius = 1.0 means sample immediate neighbors.
+        Larger values spread the sample positions farther apart,
+        making the blur much more obvious.
+    */
+    float radius = controls3.w;
+
+    vec4 s00 = texture(source, uv + vec2(-texel.x * radius, -texel.y * radius));
+    vec4 s10 = texture(source, uv + vec2( 0.0,              -texel.y * radius));
+    vec4 s20 = texture(source, uv + vec2( texel.x * radius, -texel.y * radius));
+
+    vec4 s01 = texture(source, uv + vec2(-texel.x * radius,  0.0));
+    vec4 s11 = texture(source, uv);
+    vec4 s21 = texture(source, uv + vec2( texel.x * radius,  0.0));
+
+    vec4 s02 = texture(source, uv + vec2(-texel.x * radius,  texel.y * radius));
+    vec4 s12 = texture(source, uv + vec2( 0.0,               texel.y * radius));
+    vec4 s22 = texture(source, uv + vec2( texel.x * radius,  texel.y * radius));
+
+    vec4 blurredSrcColor =
+        (s00 + s10 + s20 +
+         s01 + s11 + s21 +
+         s02 + s12 + s22) / 9.0;
+
+    /**
+        controls2.w:
+            0.0 = original
+            1.0 = full blur mix
+    */
+    vec4 srcColor = mix(s11, blurredSrcColor, controls2.w);
+
+    /**
+        Start the working color pipeline.
+        Every effect below operates on the current color in sequence.
     */
     vec3 color = srcColor.rgb;
 
-    /**
-        Convert to grayscale brightness using perceptual weights.
-    */
     float gray = dot(color, vec3(0.299, 0.587, 0.114));
     vec3 grayRgb = vec3(gray);
-
-    /**
-        Blend between original color and grayscale.
-    */
     color = mix(color, grayRgb, controls1.x);
 
-    /**
-        Build a fully inverted version of the current color,
-        then blend toward it by invert amount.
-    */
     vec3 inverted = vec3(1.0) - color;
     color = mix(color, inverted, controls1.y);
 
-    /**
-        Brightness shifts the color up or down.
-        A value of 0.0 means no change.
-    */
     color += vec3(controls1.z);
 
-    /**
-        Contrast scales distance from middle gray (0.5).
-        1.0 means no contrast change.
-        Below 1.0 reduces contrast.
-        Above 1.0 increases contrast.
-    */
     color = (color - vec3(0.5)) * controls1.w + vec3(0.5);
 
+    float satGray = dot(color, vec3(0.299, 0.587, 0.114));
+    vec3 grayRgbForSaturation = vec3(satGray);
+    color = mix(grayRgbForSaturation, color, controls2.z);
+
     /**
-        Clamp so values stay in the visible 0..1 range.
+        Threshold measures brightness.
+
+        This is a luminance-like scalar computed from RGB, not just one
+        channel like red or green alone.
     */
+    float thresholdGray = dot(color, vec3(0.299, 0.587, 0.114));
+
+    float binary = step(controls2.y, thresholdGray);
+    vec3 thresholdRgb = vec3(binary);
+
+    color = mix(color, thresholdRgb, controls2.x);
+
     color = clamp(color, 0.0, 1.0);
 
     /**
-        Output final color with original alpha and Qt opacity.
+        Effect Opacity:
+        blend the fully processed stack back over the original image.
+
+        controls3.z:
+            0.0 = original image
+            1.0 = full processed result
     */
-    fragColor = vec4(color, srcColor.a) * qt_Opacity;
+    vec3 finalRgb = mix(s11.rgb, color, controls3.z);
+    float finalAlpha = mix(s11.a, srcColor.a, controls3.z);
+
+    fragColor = vec4(finalRgb, finalAlpha) * qt_Opacity;
 }
