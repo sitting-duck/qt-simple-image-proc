@@ -57,12 +57,27 @@ MainWindow::MainWindow(QWidget* parent)
             this, [this](const QJsonArray& photos) {
                 qDebug() << "Photos received:" << photos.size();
                 populateCloudGallery(photos);
+
+                if (m_syncButton) {
+                    m_syncButton->setEnabled(true);
+                }
+
+                statusBar()->showMessage(
+                    QString("Cloud gallery synced: %1 photo(s)").arg(photos.size()),
+                    3000);
             });
 
     // Handle errors
     connect(m_syncClient, &PhotoSyncClient::requestFailed,
-            this, [](const QString& err) {
+            this, [this](const QString& err) {
                 qDebug() << "Photo fetch failed:" << err;
+
+                if (m_syncButton) {
+                    m_syncButton->setEnabled(true);
+                }
+
+                QMessageBox::warning(this, "Cloud Sync Failed", err);
+                statusBar()->showMessage("Cloud sync failed", 3000);
             });
 
     // Kick it off
@@ -150,13 +165,32 @@ void MainWindow::createCloudGalleryDock()
     auto* cloudDock = new QDockWidget("Cloud Gallery", this);
     cloudDock->setAllowedAreas(Qt::LeftDockWidgetArea | Qt::RightDockWidgetArea);
 
-    m_cloudList = new QListWidget(cloudDock);
+    auto* container = new QWidget(cloudDock);
+    auto* layout = new QVBoxLayout(container);
+    layout->setContentsMargins(8, 8, 8, 8);
+    layout->setSpacing(8);
+
+    m_syncButton = new QPushButton("Sync", container);
+    m_cloudList = new QListWidget(container);
     m_cloudList->setSelectionMode(QAbstractItemView::SingleSelection);
+
+    layout->addWidget(m_syncButton);
+    layout->addWidget(m_cloudList);
+
+    connect(m_syncButton, &QPushButton::clicked, this, [this]() {
+        if (!m_syncClient) {
+            return;
+        }
+
+        statusBar()->showMessage("Syncing cloud gallery...");
+        m_syncButton->setEnabled(false);
+        m_syncClient->fetchPhotos();
+    });
 
     connect(m_cloudList, &QListWidget::itemClicked,
             this, &MainWindow::onCloudPhotoActivated);
 
-    cloudDock->setWidget(m_cloudList);
+    cloudDock->setWidget(container);
     addDockWidget(Qt::RightDockWidgetArea, cloudDock);
 }
 
