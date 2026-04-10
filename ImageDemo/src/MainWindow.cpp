@@ -22,6 +22,12 @@
 #include <QJsonArray>
 #include <QJsonObject>
 #include <QJsonValue>
+#include <QListWidget>
+#include <QListWidgetItem>
+#include <QNetworkAccessManager>
+#include <QNetworkReply>
+#include <QBuffer>
+#include <QImage>
 
 MainWindow::MainWindow(QWidget* parent)
     : QMainWindow(parent)
@@ -31,6 +37,7 @@ MainWindow::MainWindow(QWidget* parent)
     createMenus();
     createToolbar();
     createDockPanels();
+    createCloudGalleryDock();
     setCorner(Qt::TopLeftCorner, Qt::LeftDockWidgetArea);
     setCorner(Qt::BottomLeftCorner, Qt::LeftDockWidgetArea);
     createPreview();
@@ -47,25 +54,9 @@ MainWindow::MainWindow(QWidget* parent)
 
     // Handle success
     connect(m_syncClient, &PhotoSyncClient::photosReceived,
-            this, [](const QJsonArray& photos) {
+            this, [this](const QJsonArray& photos) {
                 qDebug() << "Photos received:" << photos.size();
-
-                for (const QJsonValue& value : photos) {
-                    const QJsonObject obj = value.toObject();
-
-                    const QString photoId = obj.value("photoId").toString();
-                    const QString fileName = obj.value("fileName").toString();
-                    const QString imageUrl = obj.value("imageUrl").toString();
-                    const QString s3Key = obj.value("s3Key").toString();
-                    const qint64 sizeBytes = static_cast<qint64>(obj.value("sizeBytes").toDouble());
-
-                    qDebug() << "photoId:" << photoId;
-                    qDebug() << "fileName:" << fileName;
-                    qDebug() << "imageUrl:" << imageUrl;
-                    qDebug() << "s3Key:" << s3Key;
-                    qDebug() << "sizeBytes:" << sizeBytes;
-                    qDebug() << "------------------------";
-                }
+                populateCloudGallery(photos);
             });
 
     // Handle errors
@@ -76,6 +67,97 @@ MainWindow::MainWindow(QWidget* parent)
 
     // Kick it off
     m_syncClient->fetchPhotos();
+}
+
+void MainWindow::onCloudPhotoActivated(QListWidgetItem* item)
+{
+    if (!item) {
+        return;
+    }
+
+    const QString photoId = item->data(Qt::UserRole).toString();
+    const QString imageUrl = m_cloudItemUrlById.value(photoId);
+
+    if (imageUrl.isEmpty()) {
+        QMessageBox::warning(this, "Load Failed", "Missing image URL for selected photo.");
+        return;
+    }
+
+    statusBar()->showMessage("Downloading cloud image...");
+
+    auto* net = new QNetworkAccessManager(this);
+    QNetworkRequest request{QUrl(imageUrl)};
+    QNetworkReply* reply = net->get(request);
+
+    connect(reply, &QNetworkReply::finished, this, [this, reply, net, item, imageUrl]() {
+        const auto cleanup = [reply, net]() {
+            reply->deleteLater();
+            net->deleteLater();
+        };
+
+        if (reply->error() != QNetworkReply::NoError) {
+            QMessageBox::warning(this, "Load Failed", reply->errorString());
+            cleanup();
+            return;
+        }
+
+        const QByteArray bytes = reply->readAll();
+        cleanup();
+
+        QImage image;
+        if (!image.loadFromData(bytes)) {
+            QMessageBox::warning(this, "Load Failed", "Downloaded data was not a valid image.");
+            return;
+        }
+
+        m_controller->openImage(image, imageUrl);
+        m_hasImageLoaded = true;
+        updateUiState();
+        statusBar()->showMessage(QString("Loaded cloud image: %1").arg(item->text()), 3000);
+    });
+}
+
+void MainWindow::populateCloudGallery(const QJsonArray& photos)
+{
+    if (!m_cloudList) {
+        return;
+    }
+
+    m_cloudList->clear();
+    m_cloudItemUrlById.clear();
+
+    for (const QJsonValue& value : photos) {
+        const QJsonObject obj = value.toObject();
+
+        const QString photoId = obj.value("photoId").toString();
+        const QString fileName = obj.value("fileName").toString().trimmed();
+        const QString imageUrl = obj.value("imageUrl").toString();
+
+        if (photoId.isEmpty() || imageUrl.isEmpty()) {
+            continue;
+        }
+
+        auto* item = new QListWidgetItem(fileName.isEmpty() ? photoId : fileName);
+        item->setData(Qt::UserRole, photoId);
+
+        m_cloudList->addItem(item);
+        m_cloudItemUrlById.insert(photoId, imageUrl);
+    }
+}
+
+void MainWindow::createCloudGalleryDock()
+{
+    auto* cloudDock = new QDockWidget("Cloud Gallery", this);
+    cloudDock->setAllowedAreas(Qt::LeftDockWidgetArea | Qt::RightDockWidgetArea);
+
+    m_cloudList = new QListWidget(cloudDock);
+    m_cloudList->setSelectionMode(QAbstractItemView::SingleSelection);
+
+    connect(m_cloudList, &QListWidget::itemClicked,
+            this, &MainWindow::onCloudPhotoActivated);
+
+    cloudDock->setWidget(m_cloudList);
+    addDockWidget(Qt::RightDockWidgetArea, cloudDock);
 }
 
 void MainWindow::createMenus()

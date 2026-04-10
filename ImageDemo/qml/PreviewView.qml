@@ -23,7 +23,10 @@ Rectangle {
             Image {
                 id: sourceImage
                 anchors.fill: parent
-                source: effectSettings.imagePath === "" ? "" : "file://" + effectSettings.imagePath
+                source: effectSettings.imagePath.startsWith("http://") ||
+                        effectSettings.imagePath.startsWith("https://")
+                        ? effectSettings.imagePath
+                        : "file://" + effectSettings.imagePath
                 fillMode: Image.PreserveAspectFit
                 smooth: true
                 visible: false

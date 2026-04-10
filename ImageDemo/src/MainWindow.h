@@ -1,6 +1,8 @@
 #pragma once
 
 #include <QMainWindow>
+#include <QHash>
+#include <QJsonArray>
 
 class EffectSettings;
 class PreviewController;
@@ -9,9 +11,10 @@ class QLabel;
 class QSlider;
 class QCheckBox;
 class QPushButton;
+class QListWidget;
+class QListWidgetItem;
 
 class PhotoSyncClient;
-
 
 class MainWindow : public QMainWindow
 {
@@ -23,6 +26,8 @@ public:
 
 private:
     PhotoSyncClient* m_syncClient = nullptr;
+    QListWidget* m_cloudList = nullptr;
+    QHash<QString, QString> m_cloudItemUrlById;
 
     QAction* m_openAction = nullptr;
     QAction* m_exportAction = nullptr;
@@ -30,6 +35,9 @@ private:
     bool m_isBusy = false;
     bool m_hasImageLoaded = false;
 
+    void createCloudGalleryDock();
+    void populateCloudGallery(const QJsonArray& photos);
+    void onCloudPhotoActivated(QListWidgetItem* item);
     void createMenus();
     void createToolbar();
     void createDockPanels();

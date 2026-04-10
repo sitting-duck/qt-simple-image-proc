@@ -31,6 +31,7 @@ public:
     ~PreviewController() override = default;
 
 public slots:
+    void openImage(const QImage& image, const QString& sourceName = QString());
     void openImageFile(const QString& filePath);
     void exportImageFile(const QString& filePath);
     void onSettingsChanged();

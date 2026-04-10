@@ -152,6 +152,29 @@ void PreviewController::onSettingsChanged()
             .arg(m_settings->enabled() ? "true" : "false"));
 }
 
+void PreviewController::openImage(const QImage& image, const QString& sourceName)
+{
+    if (image.isNull()) {
+        emit statusMessageChanged("Open failed");
+        emit imageLoadFailed("ERROR: image is null");
+        return;
+    }
+
+    if (m_loadWatcher.isRunning() || m_exportWatcher.isRunning()) {
+        emit statusMessageChanged("Already busy...");
+        return;
+    }
+
+    m_currentImage = image;
+    m_settings->setImagePath(sourceName);
+
+    emit statusMessageChanged(
+        sourceName.isEmpty()
+            ? QString("Loaded image")
+            : QString("Loaded %1").arg(sourceName));
+    emit imageLoaded(sourceName, image);
+}
+
 void PreviewController::openImageFile(const QString& filePath)
 {
     if (filePath.isEmpty()) {
