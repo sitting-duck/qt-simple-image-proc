@@ -28,6 +28,10 @@
 #include <QNetworkReply>
 #include <QBuffer>
 #include <QImage>
+#include <QIcon>
+#include <QPixmap>
+#include <QNetworkRequest>
+#include <QSize>
 
 MainWindow::MainWindow(QWidget* parent)
     : QMainWindow(parent)
@@ -49,6 +53,7 @@ MainWindow::MainWindow(QWidget* parent)
     statusBar()->showMessage("Ready");
 
     m_syncClient = new PhotoSyncClient(this);
+    m_thumbNet = new QNetworkAccessManager(this);
 
     m_syncClient->setBaseUrl("https://npuctj4dl3.execute-api.us-east-1.amazonaws.com/prod");
 
@@ -154,9 +159,13 @@ void MainWindow::populateCloudGallery(const QJsonArray& photos)
 
         auto* item = new QListWidgetItem(fileName.isEmpty() ? photoId : fileName);
         item->setData(Qt::UserRole, photoId);
+        item->setToolTip(fileName);
+        item->setSizeHint(QSize(item->sizeHint().width(), 84));
 
         m_cloudList->addItem(item);
         m_cloudItemUrlById.insert(photoId, imageUrl);
+
+        requestCloudThumbnail(photoId, imageUrl, item);
     }
 }
 
@@ -174,6 +183,11 @@ void MainWindow::createCloudGalleryDock()
     m_cloudList = new QListWidget(container);
     m_cloudList->setSelectionMode(QAbstractItemView::SingleSelection);
 
+    m_cloudList->setViewMode(QListView::IconMode);
+    m_cloudList->setMovement(QListView::Static);
+    m_cloudList->setGridSize(QSize(110, 110));
+    m_cloudList->setWordWrap(true);
+
     layout->addWidget(m_syncButton);
     layout->addWidget(m_cloudList);
 
@@ -190,8 +204,54 @@ void MainWindow::createCloudGalleryDock()
     connect(m_cloudList, &QListWidget::itemClicked,
             this, &MainWindow::onCloudPhotoActivated);
 
+    m_cloudList->setIconSize(QSize(72, 72));
+    m_cloudList->setResizeMode(QListView::Adjust);
+    m_cloudList->setUniformItemSizes(false);
+    m_cloudList->setSpacing(6);
+    m_cloudList->setStyleSheet("QListWidget::item { height: 84px; }");
+
     cloudDock->setWidget(container);
     addDockWidget(Qt::RightDockWidgetArea, cloudDock);
+}
+
+void MainWindow::requestCloudThumbnail(const QString& photoId,
+                                       const QString& imageUrl,
+                                       QListWidgetItem* item)
+{
+    if (!m_thumbNet || !item) {
+        return;
+    }
+
+    QNetworkRequest request{QUrl(imageUrl)};
+    QNetworkReply* reply = m_thumbNet->get(request);
+
+    connect(reply, &QNetworkReply::finished, this, [this, reply, photoId, item]() {
+        reply->deleteLater();
+
+        if (!m_cloudList) {
+            return;
+        }
+
+        if (reply->error() != QNetworkReply::NoError) {
+            qDebug() << "Thumbnail download failed for" << photoId << ":" << reply->errorString();
+            return;
+        }
+
+        const QByteArray bytes = reply->readAll();
+
+        QImage image;
+        if (!image.loadFromData(bytes)) {
+            qDebug() << "Thumbnail image decode failed for" << photoId;
+            return;
+        }
+
+        const QImage thumb = image.scaled(
+            72, 72,
+            Qt::KeepAspectRatio,
+            Qt::SmoothTransformation);
+
+        item->setIcon(QIcon(QPixmap::fromImage(thumb)));
+    });
 }
 
 void MainWindow::createMenus()

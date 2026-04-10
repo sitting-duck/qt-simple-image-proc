@@ -14,6 +14,7 @@ class QPushButton;
 class QListWidget;
 class QListWidgetItem;
 class QPushButton;
+class QNetworkAccessManager;
 
 class PhotoSyncClient;
 
@@ -26,6 +27,8 @@ public:
     ~MainWindow() override = default;
 
 private:
+    void requestCloudThumbnail(const QString& photoId, const QString& imageUrl, QListWidgetItem* item);
+    QNetworkAccessManager* m_thumbNet = nullptr;
     QPushButton* m_syncButton = nullptr;
     PhotoSyncClient* m_syncClient = nullptr;
     QListWidget* m_cloudList = nullptr;
