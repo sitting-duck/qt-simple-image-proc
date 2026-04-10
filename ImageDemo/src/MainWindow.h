@@ -8,6 +8,7 @@
 class EffectSettings;
 class PreviewController;
 class QQuickWidget;
+class QQuickItem;
 class QLabel;
 class QSlider;
 class QCheckBox;
@@ -27,6 +28,14 @@ public:
     ~MainWindow() override = default;
 
 private:
+    enum class ExportChoice
+    {
+        Cancel,
+        GpuOnly,
+        CpuOnly,
+        Both
+    };
+
     // Cloud sync helpers
     void setupCloudSync();
     void autoLoadFirstCloudImage();
@@ -47,6 +56,11 @@ private:
     void createPreview();
     void wireUi();
     void updateUiState();
+
+    // Export helpers
+    ExportChoice askExportChoice() const;
+    void exportCurrentPreviewGpu(const QString& filePath);
+    QQuickItem* findQuickItem(const char* objectName) const;
 
     // Cloud state
     QNetworkAccessManager* m_thumbNet = nullptr;
