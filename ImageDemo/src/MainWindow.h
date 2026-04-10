@@ -3,6 +3,7 @@
 #include <QMainWindow>
 #include <QHash>
 #include <QJsonArray>
+#include <functional>
 
 class EffectSettings;
 class PreviewController;
@@ -15,6 +16,7 @@ class QListWidget;
 class QListWidgetItem;
 class QNetworkAccessManager;
 class PhotoSyncClient;
+class QByteArray;
 
 class MainWindow : public QMainWindow
 {
@@ -27,7 +29,13 @@ public:
 private:
     // Cloud sync helpers
     void setupCloudSync();
+    void autoLoadFirstCloudImage();
     void requestCloudThumbnail(const QString& photoId, const QString& imageUrl, QListWidgetItem* item);
+    void loadCloudImageFromUrl(const QString& imageUrl, const QString& displayName);
+    void downloadImageBytes(QNetworkAccessManager* net,
+                            const QString& imageUrl,
+                            std::function<void(const QByteArray&)> onSuccess,
+                            std::function<void(const QString&)> onFailure);
     void createCloudGalleryDock();
     void populateCloudGallery(const QJsonArray& photos);
     void onCloudPhotoActivated(QListWidgetItem* item);

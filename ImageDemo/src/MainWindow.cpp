@@ -4,6 +4,7 @@
 #include "PhotoSyncClient.h"
 
 #include <QAction>
+#include <QByteArray>
 #include <QCheckBox>
 #include <QDockWidget>
 #include <QFileDialog>
@@ -72,13 +73,7 @@ void MainWindow::setupCloudSync()
                     m_syncButton->setEnabled(true);
                 }
 
-                if (m_cloudList && m_cloudList->count() > 0) {
-                    auto* firstItem = m_cloudList->item(0);
-                    if (firstItem) {
-                        m_cloudList->setCurrentItem(firstItem);
-                        onCloudPhotoActivated(firstItem);
-                    }
-                }
+                autoLoadFirstCloudImage();
 
                 statusBar()->showMessage(
                     QString("Cloud gallery synced: %1 photo(s)").arg(photos.size()),
@@ -98,16 +93,58 @@ void MainWindow::setupCloudSync()
     m_syncClient->fetchPhotos();
 }
 
+void MainWindow::autoLoadFirstCloudImage()
+{
+    if (!m_cloudList || m_cloudList->count() == 0) {
+        return;
+    }
+
+    auto* firstItem = m_cloudList->item(0);
+    if (!firstItem) {
+        return;
+    }
+
+    m_cloudList->setCurrentItem(firstItem);
+    onCloudPhotoActivated(firstItem);
+}
+
+// Shared cloud download helper
+
+void MainWindow::downloadImageBytes(QNetworkAccessManager* net,
+                                    const QString& imageUrl,
+                                    std::function<void(const QByteArray&)> onSuccess,
+                                    std::function<void(const QString&)> onFailure)
+{
+    if (!net) {
+        onFailure("Network manager is not available.");
+        return;
+    }
+
+    if (imageUrl.isEmpty()) {
+        onFailure("Missing image URL.");
+        return;
+    }
+
+    QNetworkRequest request{QUrl(imageUrl)};
+    QNetworkReply* reply = net->get(request);
+
+    connect(reply, &QNetworkReply::finished, this, [reply, onSuccess = std::move(onSuccess), onFailure = std::move(onFailure)]() mutable {
+        reply->deleteLater();
+
+        if (reply->error() != QNetworkReply::NoError) {
+            onFailure(reply->errorString());
+            return;
+        }
+
+        onSuccess(reply->readAll());
+    });
+}
+
 // Cloud gallery actions
 
 void MainWindow::onCloudPhotoActivated(QListWidgetItem* item)
 {
     if (!item) {
-        return;
-    }
-
-    if (!m_imageNet) {
-        QMessageBox::warning(this, "Load Failed", "Image network manager is not available.");
         return;
     }
 
@@ -119,32 +156,31 @@ void MainWindow::onCloudPhotoActivated(QListWidgetItem* item)
         return;
     }
 
+    loadCloudImageFromUrl(imageUrl, item->text());
+}
+
+void MainWindow::loadCloudImageFromUrl(const QString& imageUrl, const QString& displayName)
+{
     statusBar()->showMessage("Downloading cloud image...");
 
-    QNetworkRequest request{QUrl(imageUrl)};
-    QNetworkReply* reply = m_imageNet->get(request);
+    downloadImageBytes(
+        m_imageNet,
+        imageUrl,
+        [this, imageUrl, displayName](const QByteArray& bytes) {
+            QImage image;
+            if (!image.loadFromData(bytes)) {
+                QMessageBox::warning(this, "Load Failed", "Downloaded data was not a valid image.");
+                return;
+            }
 
-    connect(reply, &QNetworkReply::finished, this, [this, reply, item, imageUrl]() {
-        reply->deleteLater();
-
-        if (reply->error() != QNetworkReply::NoError) {
-            QMessageBox::warning(this, "Load Failed", reply->errorString());
-            return;
-        }
-
-        const QByteArray bytes = reply->readAll();
-
-        QImage image;
-        if (!image.loadFromData(bytes)) {
-            QMessageBox::warning(this, "Load Failed", "Downloaded data was not a valid image.");
-            return;
-        }
-
-        m_controller->openImage(image, imageUrl);
-        m_hasImageLoaded = true;
-        updateUiState();
-        statusBar()->showMessage(QString("Loaded cloud image: %1").arg(item->text()), 3000);
-    });
+            m_controller->openImage(image, imageUrl);
+            m_hasImageLoaded = true;
+            updateUiState();
+            statusBar()->showMessage(QString("Loaded cloud image: %1").arg(displayName), 3000);
+        },
+        [this](const QString& error) {
+            QMessageBox::warning(this, "Load Failed", error);
+        });
 }
 
 void MainWindow::populateCloudGallery(const QJsonArray& photos)
@@ -234,34 +270,28 @@ void MainWindow::requestCloudThumbnail(const QString& photoId,
 
     Q_UNUSED(photoId);
 
-    QNetworkRequest request{QUrl(imageUrl)};
-    QNetworkReply* reply = m_thumbNet->get(request);
+    downloadImageBytes(
+        m_thumbNet,
+        imageUrl,
+        [this, item](const QByteArray& bytes) {
+            if (!m_cloudList) {
+                return;
+            }
 
-    connect(reply, &QNetworkReply::finished, this, [this, reply, item]() {
-        reply->deleteLater();
+            QImage image;
+            if (!image.loadFromData(bytes)) {
+                return;
+            }
 
-        if (!m_cloudList) {
-            return;
-        }
+            const QImage thumb = image.scaled(
+                72, 72,
+                Qt::KeepAspectRatio,
+                Qt::SmoothTransformation);
 
-        if (reply->error() != QNetworkReply::NoError) {
-            return;
-        }
-
-        const QByteArray bytes = reply->readAll();
-
-        QImage image;
-        if (!image.loadFromData(bytes)) {
-            return;
-        }
-
-        const QImage thumb = image.scaled(
-            72, 72,
-            Qt::KeepAspectRatio,
-            Qt::SmoothTransformation);
-
-        item->setIcon(QIcon(QPixmap::fromImage(thumb)));
-    });
+            item->setIcon(QIcon(QPixmap::fromImage(thumb)));
+        },
+        [](const QString&) {
+        });
 }
 
 // Main window UI construction
