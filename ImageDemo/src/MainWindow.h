@@ -13,6 +13,7 @@ class QCheckBox;
 class QPushButton;
 class QListWidget;
 class QListWidgetItem;
+class QPushButton;
 
 class PhotoSyncClient;
 
@@ -25,6 +26,7 @@ public:
     ~MainWindow() override = default;
 
 private:
+    QPushButton* m_syncButton = nullptr;
     PhotoSyncClient* m_syncClient = nullptr;
     QListWidget* m_cloudList = nullptr;
     QHash<QString, QString> m_cloudItemUrlById;
