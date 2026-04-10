@@ -11,11 +11,12 @@ find_package(Qt6 REQUIRED COMPONENTS
     QuickWidgets
     Qml
     Concurrent
+    ShaderTools
 )
 
 qt_standard_project_setup()
 
-qt_add_executable(ImageDemo
+qt_add_executable(ImageDemoApp
     src/main.cpp
     src/MainWindow.h
     src/MainWindow.cpp
@@ -25,18 +26,29 @@ qt_add_executable(ImageDemo
     src/PreviewController.cpp
 )
 
-qt_add_qml_module(ImageDemo
+qt_add_qml_module(ImageDemoApp
     URI ImageDemo
     VERSION 1.0
     QML_FILES
         qml/PreviewView.qml
 )
 
-target_link_libraries(ImageDemo PRIVATE
+qt_add_shaders(ImageDemoApp "imagedemo_shaders"
+    PREFIX
+        "/shaders"
+    BASE
+        "shaders"
+    FILES
+        shaders/passthrough.vert
+        shaders/blur.frag
+)
+
+target_link_libraries(ImageDemoApp PRIVATE
     Qt6::Core
     Qt6::Gui
     Qt6::Widgets
     Qt6::QuickWidgets
     Qt6::Qml
     Qt6::Concurrent
+    Qt6::ShaderTools
 )
