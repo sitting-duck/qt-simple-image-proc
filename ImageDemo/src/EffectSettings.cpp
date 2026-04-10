@@ -88,12 +88,13 @@ QString EffectSettings::imagePath() const
 
 void EffectSettings::setImagePath(const QString& path)
 {
-    if (m_imagePath == path) {
+    const QString cleaned = path.trimmed();
+
+    if (m_imagePath == cleaned) {
         return;
     }
 
-    m_imagePath = path;
+    m_imagePath = cleaned;
     emit imagePathChanged();
     emit settingsChanged();
 }
-

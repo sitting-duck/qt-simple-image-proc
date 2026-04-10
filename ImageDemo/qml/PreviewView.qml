@@ -23,10 +23,24 @@ Rectangle {
             Image {
                 id: sourceImage
                 anchors.fill: parent
-                source: effectSettings.imagePath.startsWith("http://") ||
-                        effectSettings.imagePath.startsWith("https://")
-                        ? effectSettings.imagePath
-                        : "file://" + effectSettings.imagePath
+
+                source: {
+                    const path = effectSettings.imagePath ? effectSettings.imagePath.trim() : ""
+
+                    if (path === "") {
+                        return ""
+                    }
+
+                    if (path.startsWith("http://") ||
+                        path.startsWith("https://") ||
+                        path.startsWith("file:///") ||
+                        path.startsWith("qrc:/")) {
+                        return path
+                    }
+
+                    return "file:///" + path
+                }
+
                 fillMode: Image.PreserveAspectFit
                 smooth: true
                 visible: false
@@ -35,7 +49,7 @@ Rectangle {
             ShaderEffect {
                 id: previewEffect
                 anchors.fill: parent
-                visible: effectSettings.imagePath !== ""
+                visible: effectSettings.imagePath !== "" && sourceImage.status === Image.Ready
 
                 property variant source: sourceImage
                 property real blurRadius: effectSettings.blurRadius
