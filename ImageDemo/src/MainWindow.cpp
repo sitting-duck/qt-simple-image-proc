@@ -2,36 +2,35 @@
 #include "EffectSettings.h"
 #include "PreviewController.h"
 #include "PhotoSyncClient.h"
-#include <QDebug>
+
 #include <QAction>
 #include <QCheckBox>
 #include <QDockWidget>
+#include <QFileDialog>
 #include <QFormLayout>
+#include <QIcon>
+#include <QImage>
+#include <QJsonArray>
+#include <QJsonObject>
+#include <QJsonValue>
 #include <QLabel>
+#include <QListWidget>
+#include <QListWidgetItem>
 #include <QMenuBar>
+#include <QMessageBox>
+#include <QNetworkAccessManager>
+#include <QNetworkReply>
+#include <QNetworkRequest>
+#include <QPixmap>
 #include <QPushButton>
 #include <QQuickWidget>
+#include <QQmlContext>
+#include <QSize>
 #include <QSlider>
 #include <QStatusBar>
 #include <QToolBar>
 #include <QVBoxLayout>
 #include <QWidget>
-#include <QFileDialog>
-#include <QMessageBox>
-#include <QQmlContext>
-#include <QJsonArray>
-#include <QJsonObject>
-#include <QJsonValue>
-#include <QListWidget>
-#include <QListWidgetItem>
-#include <QNetworkAccessManager>
-#include <QNetworkReply>
-#include <QBuffer>
-#include <QImage>
-#include <QIcon>
-#include <QPixmap>
-#include <QNetworkRequest>
-#include <QSize>
 
 MainWindow::MainWindow(QWidget* parent)
     : QMainWindow(parent)
@@ -42,29 +41,43 @@ MainWindow::MainWindow(QWidget* parent)
     createToolbar();
     createDockPanels();
     createCloudGalleryDock();
+
     setCorner(Qt::TopLeftCorner, Qt::LeftDockWidgetArea);
     setCorner(Qt::BottomLeftCorner, Qt::LeftDockWidgetArea);
+
     createPreview();
     wireUi();
-
-    statusBar()->showMessage("Ready");
 
     updateUiState();
     statusBar()->showMessage("Ready");
 
+    setupCloudSync();
+}
+
+// Cloud sync setup
+
+void MainWindow::setupCloudSync()
+{
     m_syncClient = new PhotoSyncClient(this);
     m_thumbNet = new QNetworkAccessManager(this);
+    m_imageNet = new QNetworkAccessManager(this);
 
     m_syncClient->setBaseUrl("https://npuctj4dl3.execute-api.us-east-1.amazonaws.com/prod");
 
-    // Handle success
     connect(m_syncClient, &PhotoSyncClient::photosReceived,
             this, [this](const QJsonArray& photos) {
-                qDebug() << "Photos received:" << photos.size();
                 populateCloudGallery(photos);
 
                 if (m_syncButton) {
                     m_syncButton->setEnabled(true);
+                }
+
+                if (m_cloudList && m_cloudList->count() > 0) {
+                    auto* firstItem = m_cloudList->item(0);
+                    if (firstItem) {
+                        m_cloudList->setCurrentItem(firstItem);
+                        onCloudPhotoActivated(firstItem);
+                    }
                 }
 
                 statusBar()->showMessage(
@@ -72,11 +85,8 @@ MainWindow::MainWindow(QWidget* parent)
                     3000);
             });
 
-    // Handle errors
     connect(m_syncClient, &PhotoSyncClient::requestFailed,
             this, [this](const QString& err) {
-                qDebug() << "Photo fetch failed:" << err;
-
                 if (m_syncButton) {
                     m_syncButton->setEnabled(true);
                 }
@@ -85,13 +95,19 @@ MainWindow::MainWindow(QWidget* parent)
                 statusBar()->showMessage("Cloud sync failed", 3000);
             });
 
-    // Kick it off
     m_syncClient->fetchPhotos();
 }
+
+// Cloud gallery actions
 
 void MainWindow::onCloudPhotoActivated(QListWidgetItem* item)
 {
     if (!item) {
+        return;
+    }
+
+    if (!m_imageNet) {
+        QMessageBox::warning(this, "Load Failed", "Image network manager is not available.");
         return;
     }
 
@@ -105,24 +121,18 @@ void MainWindow::onCloudPhotoActivated(QListWidgetItem* item)
 
     statusBar()->showMessage("Downloading cloud image...");
 
-    auto* net = new QNetworkAccessManager(this);
     QNetworkRequest request{QUrl(imageUrl)};
-    QNetworkReply* reply = net->get(request);
+    QNetworkReply* reply = m_imageNet->get(request);
 
-    connect(reply, &QNetworkReply::finished, this, [this, reply, net, item, imageUrl]() {
-        const auto cleanup = [reply, net]() {
-            reply->deleteLater();
-            net->deleteLater();
-        };
+    connect(reply, &QNetworkReply::finished, this, [this, reply, item, imageUrl]() {
+        reply->deleteLater();
 
         if (reply->error() != QNetworkReply::NoError) {
             QMessageBox::warning(this, "Load Failed", reply->errorString());
-            cleanup();
             return;
         }
 
         const QByteArray bytes = reply->readAll();
-        cleanup();
 
         QImage image;
         if (!image.loadFromData(bytes)) {
@@ -222,10 +232,12 @@ void MainWindow::requestCloudThumbnail(const QString& photoId,
         return;
     }
 
+    Q_UNUSED(photoId);
+
     QNetworkRequest request{QUrl(imageUrl)};
     QNetworkReply* reply = m_thumbNet->get(request);
 
-    connect(reply, &QNetworkReply::finished, this, [this, reply, photoId, item]() {
+    connect(reply, &QNetworkReply::finished, this, [this, reply, item]() {
         reply->deleteLater();
 
         if (!m_cloudList) {
@@ -233,7 +245,6 @@ void MainWindow::requestCloudThumbnail(const QString& photoId,
         }
 
         if (reply->error() != QNetworkReply::NoError) {
-            qDebug() << "Thumbnail download failed for" << photoId << ":" << reply->errorString();
             return;
         }
 
@@ -241,7 +252,6 @@ void MainWindow::requestCloudThumbnail(const QString& photoId,
 
         QImage image;
         if (!image.loadFromData(bytes)) {
-            qDebug() << "Thumbnail image decode failed for" << photoId;
             return;
         }
 
@@ -253,6 +263,8 @@ void MainWindow::requestCloudThumbnail(const QString& photoId,
         item->setIcon(QIcon(QPixmap::fromImage(thumb)));
     });
 }
+
+// Main window UI construction
 
 void MainWindow::createMenus()
 {
@@ -303,7 +315,6 @@ void MainWindow::createDockPanels()
     formLayout->setFormAlignment(Qt::AlignTop);
     formLayout->setSpacing(10);
 
-    // Blur slider + value
     m_blurSlider = new QSlider(Qt::Horizontal, controlsWidget);
     m_blurSlider->setRange(0, 100);
     m_blurSlider->setValue(10);
@@ -318,7 +329,6 @@ void MainWindow::createDockPanels()
     blurLayout->addWidget(m_blurSlider);
     blurLayout->addWidget(m_blurValueLabel);
 
-    // Opacity slider + value
     m_opacitySlider = new QSlider(Qt::Horizontal, controlsWidget);
     m_opacitySlider->setRange(0, 100);
     m_opacitySlider->setValue(100);
@@ -361,6 +371,8 @@ void MainWindow::createPreview()
 
     setCentralWidget(m_quickWidget);
 }
+
+// Preview and effect wiring
 
 void MainWindow::wireUi()
 {
@@ -440,6 +452,8 @@ void MainWindow::wireUi()
                 QMessageBox::warning(this, "Export Failed", error);
             });
 }
+
+// File actions
 
 void MainWindow::onOpenImage()
 {
