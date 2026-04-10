@@ -1,7 +1,8 @@
 #include "MainWindow.h"
 #include "EffectSettings.h"
 #include "PreviewController.h"
-
+#include "PhotoSyncClient.h"
+#include <QDebug>
 #include <QAction>
 #include <QCheckBox>
 #include <QDockWidget>
@@ -18,6 +19,9 @@
 #include <QFileDialog>
 #include <QMessageBox>
 #include <QQmlContext>
+#include <QJsonArray>
+#include <QJsonObject>
+#include <QJsonValue>
 
 MainWindow::MainWindow(QWidget* parent)
     : QMainWindow(parent)
@@ -36,6 +40,42 @@ MainWindow::MainWindow(QWidget* parent)
 
     updateUiState();
     statusBar()->showMessage("Ready");
+
+    m_syncClient = new PhotoSyncClient(this);
+
+    m_syncClient->setBaseUrl("https://npuctj4dl3.execute-api.us-east-1.amazonaws.com/prod");
+
+    // Handle success
+    connect(m_syncClient, &PhotoSyncClient::photosReceived,
+            this, [](const QJsonArray& photos) {
+                qDebug() << "Photos received:" << photos.size();
+
+                for (const QJsonValue& value : photos) {
+                    const QJsonObject obj = value.toObject();
+
+                    const QString photoId = obj.value("photoId").toString();
+                    const QString fileName = obj.value("fileName").toString();
+                    const QString imageUrl = obj.value("imageUrl").toString();
+                    const QString s3Key = obj.value("s3Key").toString();
+                    const qint64 sizeBytes = static_cast<qint64>(obj.value("sizeBytes").toDouble());
+
+                    qDebug() << "photoId:" << photoId;
+                    qDebug() << "fileName:" << fileName;
+                    qDebug() << "imageUrl:" << imageUrl;
+                    qDebug() << "s3Key:" << s3Key;
+                    qDebug() << "sizeBytes:" << sizeBytes;
+                    qDebug() << "------------------------";
+                }
+            });
+
+    // Handle errors
+    connect(m_syncClient, &PhotoSyncClient::requestFailed,
+            this, [](const QString& err) {
+                qDebug() << "Photo fetch failed:" << err;
+            });
+
+    // Kick it off
+    m_syncClient->fetchPhotos();
 }
 
 void MainWindow::createMenus()

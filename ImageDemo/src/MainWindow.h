@@ -10,6 +10,9 @@ class QSlider;
 class QCheckBox;
 class QPushButton;
 
+class PhotoSyncClient;
+
+
 class MainWindow : public QMainWindow
 {
     Q_OBJECT
@@ -19,6 +22,8 @@ public:
     ~MainWindow() override = default;
 
 private:
+    PhotoSyncClient* m_syncClient = nullptr;
+
     QAction* m_openAction = nullptr;
     QAction* m_exportAction = nullptr;
 

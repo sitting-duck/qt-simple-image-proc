@@ -12,6 +12,7 @@ find_package(Qt6 REQUIRED COMPONENTS
     Qml
     Concurrent
     ShaderTools
+    Network
 )
 
 qt_standard_project_setup()
@@ -24,6 +25,8 @@ qt_add_executable(ImageDemoApp
     src/EffectSettings.cpp
     src/PreviewController.h
     src/PreviewController.cpp
+    src/PhotoSyncClient.h
+    src/PhotoSyncClient.cpp
 )
 
 qt_add_qml_module(ImageDemoApp
@@ -51,4 +54,5 @@ target_link_libraries(ImageDemoApp PRIVATE
     Qt6::Qml
     Qt6::Concurrent
     Qt6::ShaderTools
+    Qt6::Network
 )
