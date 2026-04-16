@@ -17,16 +17,33 @@ Rectangle {
         clip: true
 
         Item {
+            id: previewSurface
+            objectName: "previewSurface"
             anchors.fill: parent
             anchors.margins: 16
 
             Image {
                 id: sourceImage
+                objectName: "sourceImage"
                 anchors.fill: parent
-                source: effectSettings.imagePath.startsWith("http://") ||
-                        effectSettings.imagePath.startsWith("https://")
-                        ? effectSettings.imagePath
-                        : "file://" + effectSettings.imagePath
+
+                source: {
+                    const path = effectSettings.imagePath ? effectSettings.imagePath.trim() : ""
+
+                    if (path === "") {
+                        return ""
+                    }
+
+                    if (path.startsWith("http://") ||
+                        path.startsWith("https://") ||
+                        path.startsWith("file:///") ||
+                        path.startsWith("qrc:/")) {
+                        return path
+                    }
+
+                    return "file:///" + path
+                }
+
                 fillMode: Image.PreserveAspectFit
                 smooth: true
                 visible: false
@@ -34,17 +51,19 @@ Rectangle {
 
             ShaderEffect {
                 id: previewEffect
+                objectName: "previewEffect"
                 anchors.fill: parent
-                visible: effectSettings.imagePath !== ""
+                visible: effectSettings.imagePath !== "" && sourceImage.status === Image.Ready
 
                 property variant source: sourceImage
                 property real blurRadius: effectSettings.blurRadius
                 property real effectOpacity: effectSettings.opacity
                 property real effectEnabled: effectSettings.enabled ? 1.0 : 0.0
-                property real texelStepX: sourceImage.status === Image.Ready && sourceImage.paintedWidth > 0
-                                          ? 1.0 / sourceImage.paintedWidth : 0.0
-                property real texelStepY: sourceImage.status === Image.Ready && sourceImage.paintedHeight > 0
-                                          ? 1.0 / sourceImage.paintedHeight : 0.0
+
+                property real texelStepX: sourceImage.status === Image.Ready && sourceImage.implicitWidth > 0
+                                          ? 1.0 / sourceImage.implicitWidth : 0.0
+                property real texelStepY: sourceImage.status === Image.Ready && sourceImage.implicitHeight > 0
+                                          ? 1.0 / sourceImage.implicitHeight : 0.0
 
                 vertexShader: "qrc:/shaders/passthrough.vert.qsb"
                 fragmentShader: "qrc:/shaders/blur.frag.qsb"
