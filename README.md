@@ -113,3 +113,19 @@ ImageDemo/
 ├── CMakeLists.txt
 ```
 
+# Setup
+### Requirements:
+
+<b>Qt Version</b>: Qt 6.11 (tested)
+<b>Minimum supported</b>: Qt 6.5+
+
+### Required Qt Modules
+Make sure the following Qt components are installed:
+```text
+Qt6Core
+Qt6Gui
+Qt6Widgets
+Qt6Quick
+Qt6Qml
+Qt6QuickWidgets
+```
